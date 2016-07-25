@@ -1,0 +1,57 @@
+IMPORT ML;
+IMPORT PBblas.*;
+IMPORT PBblas.BLAS.*;
+
+Cell := Types.Layout_Cell;
+value_t := Types.value_t;
+value_t Reciprocal(PBblas.Types.value_t v, 
+            PBblas.Types.dimension_t r, 
+            PBblas.Types.dimension_t c) := 1/v;
+
+EXPORT NMF_Multiplicative_Update(DATASET(Cell) V,DATASET(Cell) W,DATASET(Cell) H,
+								 IMatrix_Map v_map, IMatrix_Map w_map, IMatrix_Map h_map):= FUNCTION
+
+	WtV = PB_dgemm( True, False, 1.0, w_map, W, v_map, V); //to find W(transpose) * V
+	WtW = PB_dgemm( True, False, 1.0, w_map, W, w_map, W); //to find W(transpose) * W
+
+	//solve for H
+	
+	wtw_map := PBblas.Matrix_Map(w_map.matrix_rows,w_map.matrix_rows);
+	WtWH = PB_dgemm( False, False, 1.0, wtw_map, WtW, h_map, H);
+	
+	wtwh_map := PBblas.Matrix_Map(w_map.matrix_rows,h_map.matrix_cols);  
+	reciprocal_WtWH := Apply2Elements(wtwh_map, WtWH, Reciprocal);
+	reciprocal_wtwh_map := PBblas.Matrix_Map(w_map.matrix_rows,h_map.matrix_cols);
+	
+	wtv_map := PBblas.Matrix_Map(w_map.matrix_cols,v_map.matrix_cols);  
+	
+	update := HadamardProduct(map_wtv, WtV,reciprocal_wtwh_map reciprocal_WtWH);
+	H := HadamardProduct(h_map, H, update);
+	
+ 	//solve for W
+
+	VHt = PB_gemm(False, True, 1.0, v_map, V, h_map, H);
+	
+	HHt = PB_gemm( False, True, 1.0, h_map, H, h_map, H);
+	hht_map := PBblas.Matrix_Map(h_map.matrix_rows,h_map.matrix_cols); 
+	
+	WHHt = PB_gemm(False, False, 1.0, w_map, W, hht_map, HHt);
+	whht_map := PBblas.Matrix_Map(w_map.matrix_rows,map_hht.matrix_rows); 
+	
+	reciprocal_WHHt := Apply2Elements(map_whht, WHHt, Reciprocal);
+	reciprocal_whht_map := PBblas.Matrix_Map(w_map.matrix_rows, hht_map.matrix_cols);
+	
+	update := HadamardProduct(vht_map, VHt, reciprocal_whht_map, reciprocal_WHHt);
+	W := HadamardProduct(h_map, W, update);
+	
+	mat1 := MU.To(W, 1);
+	mat2 := MU.To(H, 2);
+	
+	updated_matrices := RECORD
+	
+		Types.MUElement W,
+		Types.MUElement H
+	END;
+	
+	return updated_matrices;
+END;
